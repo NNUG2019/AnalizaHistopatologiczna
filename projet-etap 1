@@ -1,0 +1,205 @@
+import pandas as pd
+import numpy as np
+
+import imageio
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.layers import Conv2D, MaxPooling2D
+from tensorflow.keras.layers import Dense, Dropout, Flatten, Activation
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras.optimizers import Adam
+
+import os
+import cv2
+
+from sklearn.utils import shuffle
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split
+import itertools
+import shutil
+import matplotlib.pyplot as plt
+%matplotlib inline
+
+
+IMAGE_SIZE = 96
+IMAGE_CHANNELS = 3
+
+SAMPLE_SIZE = 80000
+
+
+
+os.listdir('../input/histopathologic-cancer-detection/')
+
+print("Folder treningowy wynosi {} obrazów".format(len(os.listdir('../input/histopathologic-cancer-detection/train'))))
+print("Folder testowy wynosi {} obrazów".format(len(os.listdir('../input/histopathologic-cancer-detection/test'))))
+
+
+df_data = pd.read_csv('../input/histopathologic-cancer-detection/train_labels.csv')
+print("Rozmiar zbioru danych wynosi {} wierszy i".format(df_data.shape[0])," {} kolumny.".format(df_data.shape[1]))
+
+
+df_data['label'].value_counts()
+
+
+def draw_category_images(col_name,figure_cols, df, IMAGE_PATH):
+    categories = (df.groupby([col_name])[col_name].nunique()).index
+    f, ax = plt.subplots(nrows=len(categories),ncols=figure_cols, figsize=(4*figure_cols,4*len(categories)))
+    
+    for i, cat in enumerate(categories):
+        sample = df[df[col_name]==cat].sample(figure_cols) 
+        for j in range(0,figure_cols):
+            file=IMAGE_PATH + sample.iloc[j]['id'] + '.tif'
+            im=imageio.imread(file)
+            ax[i, j].imshow(im, resample=True, cmap='gray')
+            ax[i, j].set_title(cat, fontsize=16)  
+    plt.tight_layout()
+    plt.show()
+    
+    
+IMAGE_PATH = '../input/histopathologic-cancer-detection/train/'
+
+
+draw_category_images('label', 4, df_data, IMAGE_PATH)
+
+
+df_data.head()
+
+
+df_0 = df_data[df_data['label'] == 0].sample(SAMPLE_SIZE, random_state = 101)
+
+df_1 = df_data[df_data['label'] == 1].sample(SAMPLE_SIZE, random_state = 101)
+
+df_data = pd.concat([df_0, df_1],axis = 0).reset_index(drop = True)
+
+df_data = shuffle(df_data)
+
+df_data['label'].value_counts()
+
+
+
+df_data.head()
+
+
+y = df_data['label']
+
+df_train, df_val = train_test_split(df_data, test_size = 0.10, random_state = 101, stratify = y)
+
+print("W zbilansowanym zestawie treningowym mamy {} wierszy i ".format(df_train.shape[0])," {} kolumn.".format(df_train.shape[1]))
+print("W zbilansowanym zestawie poprawności mamy {} wierszy i ".format(df_val.shape[0])," {} kolumn.".format(df_val.shape[1]))
+
+
+
+
+df_train['label'].value_counts()
+
+df_val['label'].value_counts()
+
+
+
+base_dir = 'base_dir'
+os.mkdir(base_dir)
+
+
+train_dir = os.path.join(base_dir,'train_dir')
+os.mkdir(train_dir)
+
+
+
+val_dir = os.path.join(base_dir,'val_dir')
+os.mkdir(val_dir)
+
+
+
+no_tumor_tissue = os.path.join(train_dir, 'a_no_tumor_tissue')
+os.mkdir(no_tumor_tissue)
+
+
+
+has_tumor_tissue = os.path.join(train_dir, 'b_has_tumor_tissue')
+os.mkdir(has_tumor_tissue)
+
+
+
+no_tumor_tissue = os.path.join(val_dir, 'a_no_tumor_tissue')
+os.mkdir(no_tumor_tissue)
+
+
+
+has_tumor_tissue = os.path.join(val_dir, 'b_has_tumor_tissue')
+os.mkdir(has_tumor_tissue)
+
+
+
+
+os.listdir('base_dir/train_dir')
+
+
+os.listdir('base_dir/val_dir')
+
+
+
+df_data.set_index('id', inplace=True)
+
+
+train_list = list(df_train['id'])
+val_list = list(df_val['id'])
+
+
+
+
+for image in train_list:
+    # 'id' w pliku csv nie ma rozszerzenia .tif dlatego je teraz dodajemy
+    fname = image + '.tif'
+    
+    #dodawanie etykiety do obecnego obrazka
+    target = df_data.loc[image,'label']
+    
+    #wybieramy odpowiednią nazwę folderu, ze względu na klasę
+    if target == 0:
+        label = 'a_no_tumor_tissue'
+    
+    if target == 1:
+        label = 'b_has_tumor_tissue'
+    
+    #ścieżka źródłowa do obrazka
+    src = os.path.join('../input/histopathologic-cancer-detection/train', fname)
+    
+    #miejsce docelowe dla obrazka
+    dst = os.path.join(train_dir, label, fname)
+    
+    #kopiowanie obrazka ze źródła do pliku docelowego
+    shutil.copyfile(src, dst)
+    
+for image in val_list:
+    fname = image + '.tif'
+    
+    target = df_data.loc[image,'label']
+    
+    if target == 0:
+        label = 'a_no_tumor_tissue'
+    
+    if target == 1:
+        label = 'b_has_tumor_tissue'
+    
+    src = os.path.join('../input/histopathologic-cancer-detection/train', fname)
+    
+    
+    dst = os.path.join(val_dir, label, fname)
+    
+    shutil.copyfile(src, dst)
+    
+    
+    
+    
+    
+print("W folderze treningowym mamy {} obrazów, gdzie nie ma komórek nowotworowych.".format(len(os.listdir('base_dir/train_dir/a_no_tumor_tissue'))))
+print("W folderze treningowym mamy {} obrazów, na których są komórki nowotworowe.".format(len(os.listdir('base_dir/train_dir/b_has_tumor_tissue'))))
+
+
+
+
+print("W folderze walidacyjnym mamy {} obrazów, na których  nie ma komórek nowotworowych.".format(len(os.listdir('base_dir/val_dir/a_no_tumor_tissue'))))
+print("W folderze walidacyjnym mamy {} obrazów, gdzie są komórki nowotworowe.".format(len(os.listdir('base_dir/val_dir/b_has_tumor_tissue'))))
